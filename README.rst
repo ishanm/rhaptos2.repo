@@ -21,6 +21,7 @@ Pre-requisites::
 
      Python 2.7 (with header files)
      Postgres >=8.4
+     npm >= 1.2.0
 
 .. note:: There are various ways to install Postgres. Here are a few
    recommendations:
@@ -30,15 +31,21 @@ Pre-requisites::
 
          $ apt-get install postgresql
 
+   - Fedora/CentOS distributions use the command below::
+
+         $ yum install postgresql
+
    - On the Mac, it is recommended you use the `Postgres App at
      postgresapp.com <http://postgresapp.com/>`_.
 
 To initialize your database to work with the default database
 settings (do not use these same instructions for a production install)::
 
+    $ su - postgres
     $ createuser -W -s rhaptos2repo
     Password: rhaptos2repo
     $ createdb -O rhaptos2repo rhaptos2repo
+    $ createdb -O rhaptos2repo rhaptos2users
 
 These commands setup a Postgres user named ``rhaptos2repo`` and made
 it the owner of the newly created ``rhaptos2repo`` database.
@@ -67,12 +74,17 @@ a Python virtual environment (an isolated Python environment).
    to swap your local copy of the package in place of the cloned one
    before continuing the script--again, probably through commenting.
 
-You will now be given a set of commands to run::
+You'll need to launch the user server::
 
     cd /tmp/testrepo1/venvs/vrepo; source bin/activate
+    cd /tmp/testrepo1/src/rhaptos2.user; python rhaptos2/user/run.py --config local.ini --port 8001
+
+Then running these below to start the content repository instance::
+
+    cd /tmp/testrepo1/venvs/vrepo;
     rhaptos2repo-run --debug --config=develop.ini
 
-At this point you should see a runing instance
+At this point you should see a running instance
 
 Complete
 ~~~~~~~~
