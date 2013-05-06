@@ -88,14 +88,32 @@ class CNXBase():
 
     def from_dict(self, userprofile_dict):
         """
-        SHould test for schema validity etc.
+        given a dict, derived from either test fixture or json POST
+        populate the object.
 
+        setattr is valid as a means of internally updating
+        a sqlalchemy object, and will correctly pass the diamond lookup.
+
+        >>> m = model.Module(creator_uuid="test")
+        >>> d = {"totalfake":100}
+        >>> m.populate_self(d)
+        Traceback (most recent call last):
+        ... Tried to set attr totalfake when no ...
+
+        [correct usage would be as:]
+        >> d = {"title":"testtitle"}
+        >> m.populate_self(d)
+        >> m.save(db_session)
+
+        
         """
         idnames = ['id_', ]
         d = userprofile_dict
         for k in d:
             if k in idnames and d[k] is None:
                 continue  # do not assign a id of None to the internal id
+            elif k not in self.__table__.columns:
+                raise Rhaptos2Error("Tried to set attr %s when no matching table column" % k)
             else:
                 setattr(self, k, d[k])
 
