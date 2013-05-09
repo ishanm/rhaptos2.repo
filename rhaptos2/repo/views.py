@@ -73,7 +73,15 @@ backend.initdb(app.config)
 def requestid():
     g.requestid = uuid.uuid4()
     g.request_id = g.requestid
-    g.user = auth.whoami()
+    g.deferred_callbacks = []
+    auth.handle_user_authentication(request)
+
+@app.after_request
+def call_after_request_callbacks(response):
+    for callback in getattr(g, 'deferred_callbacks', ()):
+        response = callback(response)
+    return response
+
 
 ########################### views
 
@@ -224,9 +232,6 @@ def admin_config():
 ################ openid views - from flask
 
 
-@app.after_request
-def after_request(response):
-    return response
 
 # XXX A temporary fix for the openid images.
 
