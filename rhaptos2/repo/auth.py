@@ -9,12 +9,59 @@
 # See LICENCE.txt for details.
 ###
 
+"""
+
+  * requesting_user_uri
+  This is passed around a lot
+  This is suboptimal, and I think should be replaced with passing around the
+  environ dict as a means of linking functions with the request calling them
+
+
+
+* Session cookie handling
+
+  Session cookies used in repo store a random uuid, which is
+  mapped to a known useruri in a lookup table on the server.
+
+  The test-ing approach will be to send in a fixed, known cookie value
+  and to then assume that the authentication and logging in has already occured
+  and we are within the normal session.
+
+  The repo will need to be able to determine the user mapped to the fixed cookie
+  (again a fixed constant) and then pass that through as requesting_user
+
+  Then session cookie will map user and place it into the environ.
+
+  auth holds session_cookie_handler
+  This runs a simple process: if a "CNXSESSIONCOOKIE" exists,
+  it is extracted, the session ID is mapped to a real user and
+  request.environ is updated with REMOTE_USER_URI having value like cnxuser:1234
+
+  
+
+
+Why session cookies.
+Because we need some lookup mechanism. We *could* put the userID in the cookie,
+but that would effectively hand over a known plain text and oracle attacks to the client.
+
+Otehr issues
+
+I am still passing around the userd in ``g.`` This is fairly silly
+but seems consistent for flask. Will need rethink.
+
+- secure (https) - desired future toggle
+- httponly - Set on as defualt.
+
+http://executableopinions.mikadosoftware.com/en/latest/labs/webtest-cookie/cookie_testing.html
+
+"""
 
 import datetime
 import os
 import statsd
 import json
 import pprint
+import uuid
 
 from rhaptos2.common.err import Rhaptos2Error
 from rhaptos2.repo import get_app, dolog
@@ -77,191 +124,220 @@ ToDO:
 
 '''
 
+########################
+# User Auth flow
+########################
 
-class User(object):
-    """
-    represents the user as looked up by an authneticated identifer
+### this is key found in all session cookies
+CNXSESSIONID = "cnxsessionid"
 
-    .. todo:: this is a integration test !!! fix the nose test division stuff.
-
-    >>> u = User('ben@mikadosoftware.com')
-    >>> u.FullName
-    u'Benjamin Franklin'
-
-
-    """
-
-    def __init__(self, authenticated_identifier):
-        """initialise from a id we have had verified by third party
-
-        .. todo::
-           this is stubbed out - it should always go to user
-           dbase and lookup fromidentifer
-
-        .. todo::
-           what should I do if user dbase is unavilable???
-
-        .. todo::
-           totally unsafe laoding of user details
-
-        """
-
-        payload = {'user': authenticated_identifier}
-
-        user_server_url = app.config['globals'][
-            u'userserver'].replace("/user", "/openid")
-
-        dolog("INFO", "user info - from url %s and query string %s" %
-                      (user_server_url, repr(payload)))
-
-        try:
-            r = requests.get(user_server_url, params=payload)
-            userdetails = r.json()
-        except Exception, e:
-            #.. todo:: not sure what to do here ... the user dbase is down
-            dolog("INFO", e)
-            userdetails = None
-
-        dolog("INFO", "Got back %s " % str(userdetails))
-        if userdetails and r.status_code == 200:
-            ### todo:: better self update
-            dolog("INFO", type(userdetails))
-            dolog("INFO", repr(userdetails))
-            self.__dict__.update(userdetails)
-        else:
-            ### we have a authenticated user but no name.
-            ### todo:: force user to give us their details for user db
-            self.email = "Unknown User"
-            self.fullname = "Unknown User"
-            self.user_id = "Unknownuser"
-
-    def __repr__(self):
-        return pprint.pformat(self.__dict__)
-
-    def load_JSON(self, jsondocstr):
-        """ parse and store details of properly formatted JSON doc
-        """
-        user_dict = json.loads(jsondocstr)
-        self.__dict__.update(user_dict)
+### FIXME - testing purposes only
+ALLZEROS = "00000000-0000-0000-0000-000000000000"
+ROUSER = "00000000-0000-0000-0000-000000000001"
+BADUSER = "00000000-0000-0000-0000-000000000002"
 
 
-class Identity(object):
-    """THis 'owns' User - its rubbish to have two clases doing the
-        same basic thing.  I should merge them but need longer to test
-        (demo day)
-
+def handle_user_authentication(flask_request):
     """
 
-    def __init__(self, authenticated_identifier):
-        """placeholder - we want to store identiy values somewhere but
-           sqlite is limited to one server, so need move to network
-           aware storage
+    gets called before_request (which is *after* processing of HTTP headers
+    but *before* __call__ on wsgi.)
 
-        .. todo:: rename FUllNAme to fullname
-        .. todo:: in fact fix whole user details
-        .. todo:: combine identiy and USer into one class !
+    we examine the request, find session cookie,
+    register any logged in user, or redirect to login pages
 
-        """
+    """
+    ### convert the cookie to a registered users details
+    try:
+        userdata = session_to_user(flask_request.cookies, flask_request.environ)
+    except Rhaptos2Error, e:
+        raise e #fixme: redirect to login should happen here
 
-        self.authenticated_identifier = authenticated_identifier
-        self.user = get_user_from_identifier(authenticated_identifier)
-        ### .. todo:: rename and refactor the different usaerid user auth etc in all pkgs
-        if self.user:
-            self.email = self.user.email
-            self.name = self.user.fullname
-            self.userID = self.user.user_id
-        else:
-            self.email = None
-            self.name = None
-            self.userID = None
+    ## We are at start of request cycle, so tell everything downstream who User is.
+    if userdata:
+        g.userd = userdata
+        flask_request.environ['REMOTE_USER_URI'] = userdata['user_uri']
+        create_session(userdata)    
+    else:
+        g.userd = None
+        raise Rhaptos2Error("no user data, Auth ID not registerd")
+    
+##########################
+## Session Cookie Handling
+##########################
+            
+def session_to_user(flask_request_cookiedict, flask_request_environ):
+    """
+   
+    >>> cookies = {"cnxsessionid": "00000000-0000-0000-0000-000000000000",}
+    >>> env = {}
+    >>> outenv = session_to_user(cookies, env)
+    >>> outenv["REMOTE_USER"]["name"]
+    'Paul'
 
-        self.user_id = self.userID
+    """
+    print flask_request_cookiedict
+    print flask_request_environ
+    if CNXSESSIONID in flask_request_cookiedict:
+        sessid = flask_request_cookiedict[CNXSESSIONID]
+    else:
+        raise Rhaptos2Error("NO SESSION - REDIRECT TO LOGIN")
+        
+    userdata = lookup_session(sessid)
+    return userdata
+    
 
-    def user_as_dict(self):
-        return {"auth_identifier": self.authenticated_identifier,
-                "id": self.userID,
-                "email": self.email,
-                "name": self.name}
+def lookup_session(sessid):
+    """
+    We would expect this to be redis-style cache in production
+    """
+
+    onehour = datetime.timedelta(hours=1)
+    d0 = datetime.datetime.utcnow()
+    d1 = datetime.datetime.utcnow() + onehour
+                         
+    developercache = {ALLZEROS:
+#                       {"interests": null, "identifiers": [{"identifierstring": "https://edwoodward.myopenid.com", "user_id": "cnxuser:75e06194-baee-4395-8e1a-566b656f6922", "identifiertype": "openid"}],
+#                        "user_id": "cnxuser:75e06194-baee-4395-8e1a-566b656f6922", "suffix": null, "firstname": null, "title": null, "middlename": null, "lastname": null, "imageurl": null, "otherlangs": null, "affiliationinstitution_url": null, "email": null, "version": null, "location": null, "recommendations": null, "preferredlang": null, "fullname": "Ed Woodward", "homepage": null, "affiliationinstitution": null, "biography": null}
+                       {'name': 'PaulRW',
+                        'user_uri':"cnxuser:75e06194-baee-4395-8e1a-566b656f6920",
+                        'id':"cnxuser:75e06194-baee-4395-8e1a-566b656f6920",
+                        'starttimeUTC': d0.isoformat(),
+                        'endtimeUTC': d1.isoformat(),
+                       },
+
+                      ROUSER:
+                       {'name': 'Ross',
+                        'user_uri':"cnxuser:75e06194-baee-4395-8e1a-566b656f6921",
+                        'id':"cnxuser:75e06194-baee-4395-8e1a-566b656f6921",                        
+                        'starttimeUTC': d0.isoformat(),
+                        'endtimeUTC': d1.isoformat(),
+                        },
+                      
+                      BADUSER:
+                       {'name': 'BaDuSer',
+                        'user_uri':"cnxuser:75e06194-baee-4395-8e1a-566b656f6922",
+                        'id':"cnxuser:75e06194-baee-4395-8e1a-566b656f6922",                        
+                        'starttimeUTC': d0.isoformat(),
+                        'endtimeUTC': d1.isoformat(),
+                       },
+    }
+    try:
+        dolog("INFO", "We attempted to look up sessid %s in cache SUCCESS" % sessid)
+        return developercache[sessid]
+
+    except:
+        dolog("INFO", "We attempted to look up sessid %s in cache FAILED" % sessid)          
+        return None
+        #in reality here we might want to try the redis chace or contact user server
+        
+def authenticated_identifier_to_registered_user_details(ai):
+    """
+    Given an ``authenticated_identifier (ai)`` request full user details from
+    the ``user service``
 
 
+    returns dict of userdetails (success),
+            None (user not registerd)
+            or error (user service down).
+    
+    """
+    payload = {'user': authenticated_identifier}
+    ### Fixme - the whole app global thing is annoying me now.
+    user_server_url = app.config['globals'][u'userserver'].replace("/user", "/openid")
+
+    dolog("INFO", "user info - from url %s and query string %s" %
+                  (user_server_url, repr(payload)))
+
+    try:
+        r = requests.get(user_server_url, params=payload)
+        userdetails = r.json()
+    except Exception, e:
+        #.. todo:: not sure what to do here ... the user dbase is down
+        dolog("INFO", e)
+        userdetails = None
+
+    dolog("INFO", "Got back %s " % str(userdetails))
+    if userdetails and r.status_code == 200:
+        return userdetails
+    else:
+        raise Rhaptos2Error("Not a known user")
+
+def create_session(userdata):
+    """
+    """
+    sessionid = uuid.uuid4()
+    sessionid = ALLZEROS
+    def begin_session(resp):
+        resp.set_cookie('cnxsessionid',sessionid)
+        return resp
+        
+    g.deferred_callbacks.append(begin_session)
+    ### Now at end of request we will call begin_session() and its closure will set sessionid correctly.
+    
+
+        
+        
 def after_authentication(authenticated_identifier, method):
     """Called after a user has provided a validated ID (openid or peresons)
 
     method either openid, or persona
 
+    Here we have several choices:
+
+    * User is registered
+      - attempt to lookup validatedID against ``user.cnx.org service``.
+      - capture the details,
+      - create a sessionID
+      - apply details to session-store under the sessionID
+      - set-cookie with sessionid
+      - redirect to rooturl
+    
+    
+    * User is not registered
+      - attempt to lookup validatedID against ``user.cnx.org service``.
+      - redirect to the (TBC) ``/register/`` page
+    
+       
+    
     """
-    dolog("INFO", "in after auth - %s %s" % (authenticated_identifier, method))
-    dolog("INFO", "before session - %s" % repr(session))
-    ident = Identity(authenticated_identifier)
-    # set session, set g, set JS
-    # session update?
     if method not in ('openid', 'persona'):
         raise Rhaptos2Error("Incorrect method of authenticating ID")
-    session['authenticated_identifier'] = authenticated_identifier
-
-    g.userID = ident.userID
-
-    dolog("INFO", "ALLG:%s" % repr(g))
-    dolog("INFO", "ALLG.user:%s" % repr(g.userID))
-    dolog("INFO", "AFTER session %s" % repr(session))
-
-    return ident
+    
+    dolog("INFO", "in after auth - %s %s" % (authenticated_identifier, method))
+    userdetails = authenticated_identifier_to_registered_user_details(authenticated_identifier)
+    return userdetails
 
 
-def get_user_from_identifier(authenticated_identifier):
-    """
-    """
-    # supposed to be memcache lookup
-    return User(authenticated_identifier)
-
-
-def store_identity(identity_url, **kwds):
-    """no-op but would push idneity to backend storage ie memcvache """
-    pass
-
-
-def retrieve_identity(identity_url, **kwds):
-    """no-op but would pull idneity to backend storage ie memcvache """
-    pass
 
 
 def whoami():
     '''
-    return the Identity object stored in session cookie
-    TODO: store the userid in session cookie too ?
-
-    .. todo::
-       session assumes there will be a key of 'authenticated_identifier'
-
-    .. todo::
-       I always go and look this up - decide if this is sensible / secure
-
-    .. todo::
-       use secure cookie
-
-    I really need to think about session cookies. Default for now.
-
-
-    ..  todo:: document fajkeuserID
+    
+    based on session cookie
+    returns userd dict of user details, equivalent to mediatype from service / session
+    
     '''
-    if (HTTPHEADER_STORING_USERAUTH in request.headers
-         and app.debug is True
-           and 'authenticated_identifier' not in session):
-        fakeuserauth = request.headers.get(HTTPHEADER_STORING_USERAUTH)
-        ident = after_authentication(fakeuserauth, "openid")
-        dolog("INFO", "FAKING USER LOGIN - %s" % fakeuserauth)
-        return ident
+    return g.userd
+    
+    # if (HTTPHEADER_STORING_USERAUTH in request.headers
+    #      and app.debug is True
+    #        and 'authenticated_identifier' not in session):
+    #     fakeuserauth = request.headers.get(HTTPHEADER_STORING_USERAUTH)
+    #     ident = after_authentication(fakeuserauth, "openid")
+    #     dolog("INFO", "FAKING USER LOGIN - %s" % fakeuserauth)
+    #     return ident
 
-    elif 'authenticated_identifier' in session:
-        ident = Identity(session['authenticated_identifier'])
-        g.userID = ident.userID
-        dolog("INFO", "Session active user is - %s" % ident.userID)
-        return ident
-    else:
-        callstatsd("rhaptos2.repo.notloggedin")
-        dolog("INFO", "not headers, not session")        
-        g.userID = None
-        return None
+    # elif 'authenticated_identifier' in session:
+    #     ident = Identity(session['authenticated_identifier'])
+    #     g.userID = ident.userID
+    #     dolog("INFO", "Session active user is - %s" % ident.userID)
+    #     return ident
+    # else:
+    #     callstatsd("rhaptos2.repo.notloggedin")
+    #     dolog("INFO", "not headers, not session")        
+    #     g.userID = None
+    #     return None
 
 
 ## .. todo:: why is there a view in here??
@@ -281,11 +357,10 @@ def whoamiGET():
 
     '''
     ### todo: return 401 code and let ajax client put up login.
-    user = whoami()
+    userd = whoami()
 
-    if user:
-        d = user.user_as_dict()
-        jsond = asjson(d)
+    if userd:
+        jsond = asjson(userd)
         ### make decorators !!!
         resp = flask.make_response(jsond)
         resp.content_type = 'application/json'
