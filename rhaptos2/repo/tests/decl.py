@@ -329,14 +329,14 @@ users = {
 
 # added as extra people to every module etc.
 acllist = [
-    {'dateLastModifiedUTC': None,
-     'dateCreatedUTC': None,
-     'user_uri': users['phil'].useruri,
-     'role_type': 'aclrw'},
+    {'beginDateUTC': None,
+     'endDateUTC': None,
+     'user_uri': users['ross'].useruri,
+     'role_type': 'aclro'},
 
-    {'dateLastModifiedUTC': None,
-     'dateCreatedUTC': None,
-     'user_uri': users['ed'].useruri,
+    {'beginDateUTC': None,
+     'endDateUTC': None,
+     'user_uri': users['michael'].useruri,
      'role_type': 'aclro'}
 ]
 
