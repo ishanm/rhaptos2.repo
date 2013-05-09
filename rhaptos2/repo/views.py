@@ -128,13 +128,13 @@ def workspaceGET():
     ### yes the client should only expect to handle HTTP CODES
     ### compare on userID
 
-    identity = auth.whoami()
-    if not identity:
+    userd = auth.whoami()
+    if not userd:
         abort(403)
     else:
         wout = {}
-        dolog("INFO", "Calling workspace with %s" % identity.userID)
-        w = model.workspace_by_user(identity.userID)
+        dolog("INFO", "Calling workspace with %s" % userd['user_uri'])
+        w = model.workspace_by_user(userd['user_uri'])
         dolog("INFO", repr(w))
         ## w is a list of models (folders, cols etc).
         # it would require some flattening or a JSONEncoder but we just want
@@ -253,7 +253,7 @@ def login():
     to start the OpenID machinery.
     """
     # if we are already logged in, go back to were we came from
-    if g.user is not None:
+    if g.userd is not None:
         return redirect(auth.oid.get_next_url())
     if request.method == 'POST':
         openid = request.form.get('openid')
@@ -356,7 +356,7 @@ def folder_router(folderuri):
     """
     """
     dolog("INFO", "In folder router, %s" % request.method)
-    requesting_user_uri = g.userID
+    requesting_user_uri = g.userd['user_uri']
     payload = obtain_payload(request)
 
     if request.method == "GET":
@@ -395,7 +395,7 @@ def collection_router(collectionuri):
     """
     """
     dolog("INFO", "In collection router, %s" % request.method)
-    requesting_user_uri = g.userID
+    requesting_user_uri = g.userd['user_uri']
     payload = obtain_payload(request)
 
     if request.method == "GET":
@@ -434,7 +434,7 @@ def module_router(moduleuri):
     """
     """
     dolog("INFO", "In module router, %s" % request.method)
-    requesting_user_uri = g.userID
+    requesting_user_uri = g.userd['user_uri']
     payload = obtain_payload(request)
 
     if request.method == "GET":
@@ -481,8 +481,8 @@ def folder_get(folderuri, requesting_user_uri):
     (*) This may get complicated with thread-locals in Flask and scoped sessions. please see notes
         on backend.py
     """
-    fldr = model.obj_from_urn(folderuri, g.userID)
-    fldr_complex = fldr.__complex__(g.userID)
+    fldr = model.obj_from_urn(folderuri, g.userd['user_uri'])
+    fldr_complex = fldr.__complex__(g.userd['user_uri'])
 
     resp = flask.make_response(json.dumps(fldr_complex))
     resp.content_type = 'application/json; charset=utf-8'
@@ -540,7 +540,7 @@ def generic_delete(uri, requesting_user_uri):
 
 
 def generic_acl(klass, uri, acllist):
-    owner = g.userID
+    owner = g.userd['user_uri']
     fldr = model.get_by_id(klass, uri, owner)
     fldr.set_acls(owner, acllist)
     resp = flask.make_response(json.dumps(fldr.__complex__(owner)))
@@ -553,7 +553,7 @@ def generic_acl(klass, uri, acllist):
            methods=['PUT', 'GET'])
 def collection_acl_put(collectionuri):
     """ """
-    requesting_user_uri = g.userID
+    requesting_user_uri = g.userd['user_uri']
     if request.method == "PUT":
         jsond = request.json
         return generic_acl(model.Collection, collectionuri, jsond)
@@ -566,7 +566,7 @@ def collection_acl_put(collectionuri):
 @app.route('/folder/<path:uri>/acl/', methods=['PUT', 'GET'])
 def acl_folder_put(uri):
     """ """
-    requesting_user_uri = g.userID
+    requesting_user_uri = g.userd['user_uri']
     if request.method == "PUT":
         jsond = request.json
         return generic_acl(model.Folder, uri, jsond)
@@ -579,7 +579,7 @@ def acl_folder_put(uri):
 @app.route('/module/<path:uri>/acl/', methods=['PUT', 'GET'])
 def acl_module_put(uri):
     """ """
-    requesting_user_uri = g.userID
+    requesting_user_uri = g.userd['user_uri']
     if request.method == "PUT":
         jsond = request.json
         return generic_acl(model.Module, uri, jsond)
