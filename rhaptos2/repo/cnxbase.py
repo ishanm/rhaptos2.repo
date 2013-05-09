@@ -304,12 +304,11 @@ class CNXBase():
         False
 
         """
-        s = "*****AUTH"
-        s += "model" + str(self)
-        s += "action" + str(action)
-        s += "user" + str(requesting_user_uri)
-        s += "*****/AUTH"
-        dolog("INFO", s)
+        s = "***AUTHATTEMPT:"
+        s += "-" + str(self)
+        s += "-" + str(action)
+        s += "-" + str(requesting_user_uri)
+
         if action in ("GET", "HEAD", "OPTIONS"):
             valid_user_list = [u.user_uri for u in self.userroles
                                if u.role_type in ("aclro", "aclrw")]
@@ -317,18 +316,24 @@ class CNXBase():
             valid_user_list = [u.user_uri for u in self.userroles
                                if u.role_type in ("aclrw",)]
         else:
-            # raise Rhaptos2SecurityError("Unknown action type: %s" % action)
+            s += "FAILED - Unknown action type  %s" % action
+            dolog("INFO", s)
             return False
 
         if requesting_user_uri is None:
-            # raise Rhaptos2SecurityError("No user_uri supplied: %s" %
-            #                            requesting_user_uri)
+            s += "FAILED - None user supplied" 
+            dolog("INFO", s)
             return False
         else:
-            if requesting_user_uri in valid_user_list:
-                return True
-            else:
+            if requesting_user_uri not in valid_user_list:
+                s += "FAIL - user not in valid list %s" % str(valid_user_list) 
+                dolog("INFO", s)
                 return False
+            else:
+                #At last!
+                s += "SUCCESS user in valid list %s" % str(valid_user_list) 
+                dolog("INFO", s)
+                return True
 
 
 if __name__ == '__main__':

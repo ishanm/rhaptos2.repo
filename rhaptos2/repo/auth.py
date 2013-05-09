@@ -24,10 +24,7 @@ from flask import request, g, session
 from flaskext.openid import OpenID
 import requests
 
-### THis header is where we put the authenticated ID
-HTTPHEADER_STORING_USERAUTH = "X-REMOTEAUTHID"
-HTTPHEADER_STORING_USERURI = "X-REMOTEUSERURI"
-
+from webob import Request
 
 app = get_app()
 
