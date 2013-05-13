@@ -81,9 +81,9 @@ OK, now lets use a properly formatted (but unlikely) UUID
 >>> set_session(sid, {"name":"Paul"})
 True
 >>> userd = get_session(sid)
->>> print userd[0][0]
+>>> print userd[0]
 00000000-0000-0000-0000-000000000001
->>> delete_session(userd[0][0])
+>>> delete_session(userd[0])
 
 
 To do
@@ -223,7 +223,7 @@ def connection_refresh(conn):
 def set_session(sessionid, userd):
     """
     Given a sessionid (generated according to ``cnxsessionid spec`` elsewhere)
-    and a userdict 
+    and a ``userdict`` store in session cache with appropriate timeouts.
 
     
     """
@@ -271,20 +271,89 @@ def delete_session(sessionid):
     
 def get_session(sessionid):
     """
-    Given a sessionid, if it exists, and is "in date" then return json.
+    Given a sessionid, if it exists, and is "in date" then
+       return userdict (oppostie of set_session)
+    
     Otherwise return None
+    (We do not error out on id not found)
+    
     """
     if not validate_uuid_format(sessionid):
         raise Rhaptos2Error("Incorrect UUID format for sessionid %s" % sessionid)
 
-    SQL = """SELECT * FROM session_cache WHERE sessionid = %s
+    SQL = """SELECT userdict FROM session_cache WHERE sessionid = %s
              AND CURRENT_TIMESTAMP BETWEEN session_startutc AND session_endutc;"""
     rs = run_query(SQL, [sessionid,])
     if len(rs) != 1:
         return None
     else:
-        return rs
+        return json.loads(rs[0][0])
+    
 
+def _fakesessionusers(sessiontype='fixed'):
+    """a mechainsims to help with testing.
+    :param:`sessiontype` can be either ``floating`` or ``fixed``
+    
+    ``fixed`` will set three sessionids of type all zeros + 1 / 2 and assign
+    them three test users as below
+
+    ``floating`` will randomly choose a "normal" uuid, and will always set
+    edwoodward and will then have ed as a "real logged in user".  THis is
+    expected to be for testing without faking openid logins.
+
+
+    usage:
+>> import sessioncache, json
+>> userd = sessioncache.get_session("00000000-0000-0000-0000-000000000002")
+>>> userd.keys()
+[u'interests', u'user_id', u'suffix', u'firstname', u'title', u'middlename', u'lastname', u'imageurl', u'identifiers', u'affiliationinstitution_url', u'email', u'version', u'location', u'recommendations', u'preferredlang', u'affiliationinstitution', u'otherlangs', u'homepage', u'fullname', u'biography']
+
+    """
+    developertmpl = """{"interests": null,
+                        "identifiers": [{"identifierstring":  "https://%(name)s.myopenid.com",
+                                         "user_id": "%(uri)s",
+                                         "identifiertype": "openid"}],
+                        "user_id": "%(uri)s",
+                        "suffix": null, "firstname": null, "title": null,
+                        "middlename": null, "lastname": null, "imageurl": null,
+                        "otherlangs": null, "affiliationinstitution_url": null,
+                        "email": null, "version": null, "location": null,
+                        "recommendations": null, "preferredlang": null,
+                        "fullname": "%(name)s", "homepage": null,
+                        "affiliationinstitution": null, "biography": null}"""
+
+    developers = [{"name":"pbrian",
+                   "uri":"cnxuser:75e06194-baee-4395-8e1a-566b656f6920",
+                   "fakesessionid":"00000000-0000-0000-0000-000000000000"
+                  },
+                  {"name":"rossreedstrm",
+                   "uri":"cnxuser:75e06194-baee-4395-8e1a-566b656f6921",
+                   "fakesessionid":"00000000-0000-0000-0000-000000000001"
+                  },
+                  {"name":"edwoodward",
+                   "uri":"cnxuser:75e06194-baee-4395-8e1a-566b656f6922",
+                   "fakesessionid":"00000000-0000-0000-0000-000000000002"
+                  }
+    ]
+    
+    if sessiontype == 'fixed':
+        #clear down the cache - only use this in testing anyway
+        exec_stmt("DELETE from session_cache;", {})
+        for dev in developers:
+            js = developertmpl % dev
+            tmpdict = json.loads(js)
+            sid = dev['fakesessionid']
+            set_session(sid, tmpdict)
+    elif sessiontype == 'floating':
+        js = developertmpl % developers[2]
+        sid = uuid.uuid4()
+        set_session(sid, js)
+    else:
+        raise Rhaptos2Error("sessiontype Must be 'floating' or 'fixed'")
+        
+        
+
+        
 if __name__ == '__main__':
     import doctest
     val = doctest.ELLIPSIS+doctest.REPORT_ONLY_FIRST_FAILURE+doctest.IGNORE_EXCEPTION_DETAIL

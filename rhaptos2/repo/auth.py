@@ -12,39 +12,9 @@
 """
 
   * requesting_user_uri
-  This is passed around a lot
-  This is suboptimal, and I think should be replaced with passing around the
-  environ dict as a means of linking functions with the request calling them
-
-
-
-* Session cookie handling
-
-  Session cookies used in repo store a random uuid, which is
-  mapped to a known useruri in a lookup table on the server.
-
-  The test-ing approach will be to send in a fixed, known cookie value
-  and to then assume that the authentication and logging in has already occured
-  and we are within the normal session.
-
-  The repo will need to be able to determine the user mapped to the fixed cookie
-  (again a fixed constant) and then pass that through as requesting_user
-
-  Then session cookie will map user and place it into the environ.
-
-  auth holds session_cookie_handler
-  This runs a simple process: if a "CNXSESSIONCOOKIE" exists,
-  it is extracted, the session ID is mapped to a real user and
-  request.environ is updated with REMOTE_USER_URI having value like cnxuser:1234
-
-  
-
-
-Why session cookies.
-Because we need some lookup mechanism. We *could* put the userID in the cookie,
-but that would effectively hand over a known plain text and oracle attacks to the client.
-
-Otehr issues
+This is passed around a lot
+This is suboptimal, and I think should be replaced with passing around the
+environ dict as a means of linking functions with the request calling them
 
 I am still passing around the userd in ``g.`` This is fairly silly
 but seems consistent for flask. Will need rethink.
@@ -53,6 +23,9 @@ but seems consistent for flask. Will need rethink.
 - httponly - Set on as defualt.
 
 http://executableopinions.mikadosoftware.com/en/latest/labs/webtest-cookie/cookie_testing.html
+
+
+
 
 """
 
@@ -70,7 +43,7 @@ import flask
 from flask import request, g, session
 from flaskext.openid import OpenID
 import requests
-
+import sessioncache
 from webob import Request
 
 app = get_app()
@@ -82,47 +55,6 @@ app.config.update(
 
 # setup flask-openid
 oid = OpenID(app)
-
-
-'''
-
-Wanted:
-
-onbjects to standarse the things like username lookups,
-username to directory, etc etc
-
-Tests I want to see
--------------------
-
-* logging
-* message queueing
-* pygit - api
-
-
-
-API
----
-
-:Workspace:  a group of repos
-:collection: a group of files,
-             including ordering of modules
-             Effectively a repo
-:branch: branch of a single repo
-
-:fork: branch of a single repo, but placed under my workspace
-       github - ? clone?
-:pull request: how?
-
-
-
-
-ToDO:
-
-* better CORS handling - see http://flask.pocoo.org/snippets/56/
-* decorator info: http://flask.pocoo.org/docs/patterns/viewdecorators/
-  http://docs.python.org/library/functools.html#functools.wraps
-
-'''
 
 ########################
 # User Auth flow
@@ -145,7 +77,6 @@ def handle_user_authentication(flask_request):
 
     we examine the request, find session cookie,
     register any logged in user, or redirect to login pages
-
     """
     ### convert the cookie to a registered users details
     try:
@@ -155,12 +86,12 @@ def handle_user_authentication(flask_request):
 
     ## We are at start of request cycle, so tell everything downstream who User is.
     if userdata:
+        userdata['user_uri'] = userdata['user_id']
         g.userd = userdata
         flask_request.environ['REMOTE_USER_URI'] = userdata['user_uri']
-        create_session(userdata)    
     else:
         g.userd = None
-        raise Rhaptos2Error("no user data, Auth ID not registerd")
+        raise Rhaptos2Error("no user data, Auth ID not registerd - redirerct to login")
     
 ##########################
 ## Session Cookie Handling
@@ -171,18 +102,15 @@ def session_to_user(flask_request_cookiedict, flask_request_environ):
    
     >>> cookies = {"cnxsessionid": "00000000-0000-0000-0000-000000000000",}
     >>> env = {}
-    >>> outenv = session_to_user(cookies, env)
-    >>> outenv["REMOTE_USER"]["name"]
-    'Paul'
+    >>> userd = session_to_user(cookies, env)
+    >>> outenv["fullname"]
+    'pbrian'
 
     """
-    print flask_request_cookiedict
-    print flask_request_environ
     if CNXSESSIONID in flask_request_cookiedict:
         sessid = flask_request_cookiedict[CNXSESSIONID]
     else:
         raise Rhaptos2Error("NO SESSION - REDIRECT TO LOGIN")
-        
     userdata = lookup_session(sessid)
     return userdata
     
@@ -190,47 +118,22 @@ def session_to_user(flask_request_cookiedict, flask_request_environ):
 def lookup_session(sessid):
     """
     We would expect this to be redis-style cache in production
+
+    returns python dict (the return value of get_session)
     """
-
-    onehour = datetime.timedelta(hours=1)
-    d0 = datetime.datetime.utcnow()
-    d1 = datetime.datetime.utcnow() + onehour
-                         
-    developercache = {ALLZEROS:
-#                       {"interests": null, "identifiers": [{"identifierstring": "https://edwoodward.myopenid.com", "user_id": "cnxuser:75e06194-baee-4395-8e1a-566b656f6922", "identifiertype": "openid"}],
-#                        "user_id": "cnxuser:75e06194-baee-4395-8e1a-566b656f6922", "suffix": null, "firstname": null, "title": null, "middlename": null, "lastname": null, "imageurl": null, "otherlangs": null, "affiliationinstitution_url": null, "email": null, "version": null, "location": null, "recommendations": null, "preferredlang": null, "fullname": "Ed Woodward", "homepage": null, "affiliationinstitution": null, "biography": null}
-                       {'name': 'PaulRW',
-                        'user_uri':"cnxuser:75e06194-baee-4395-8e1a-566b656f6920",
-                        'id':"cnxuser:75e06194-baee-4395-8e1a-566b656f6920",
-                        'starttimeUTC': d0.isoformat(),
-                        'endtimeUTC': d1.isoformat(),
-                       },
-
-                      ROUSER:
-                       {'name': 'Ross',
-                        'user_uri':"cnxuser:75e06194-baee-4395-8e1a-566b656f6921",
-                        'id':"cnxuser:75e06194-baee-4395-8e1a-566b656f6921",                        
-                        'starttimeUTC': d0.isoformat(),
-                        'endtimeUTC': d1.isoformat(),
-                        },
-                      
-                      BADUSER:
-                       {'name': 'BaDuSer',
-                        'user_uri':"cnxuser:75e06194-baee-4395-8e1a-566b656f6922",
-                        'id':"cnxuser:75e06194-baee-4395-8e1a-566b656f6922",                        
-                        'starttimeUTC': d0.isoformat(),
-                        'endtimeUTC': d1.isoformat(),
-                       },
-    }
+    dolog("INFO", "begin look up sessid %s in cache" % sessid)
     try:
-        dolog("INFO", "We attempted to look up sessid %s in cache SUCCESS" % sessid)
-        return developercache[sessid]
-
-    except:
-        dolog("INFO", "We attempted to look up sessid %s in cache FAILED" % sessid)          
-        return None
-        #in reality here we might want to try the redis chace or contact user server
-        
+        userd = sessioncache.get_session(sessid)
+        if userd:
+            dolog("INFO", "We attempted to look up sessid %s in cache SUCCESS" % sessid)
+            return userd
+        else:
+            dolog("INFO", "We attempted to look up sessid %s in cache FAILED" % sessid)
+            return None
+    except Exception, e:
+        dolog("INFO", "We attempted to look up sessid %s in cache FAILED with Err %s" % (sessid, str(e)))        
+        raise e
+    
 def authenticated_identifier_to_registered_user_details(ai):
     """
     Given an ``authenticated_identifier (ai)`` request full user details from
@@ -267,7 +170,6 @@ def create_session(userdata):
     """
     """
     sessionid = uuid.uuid4()
-    sessionid = ALLZEROS
     def begin_session(resp):
         resp.set_cookie('cnxsessionid',sessionid)
         return resp

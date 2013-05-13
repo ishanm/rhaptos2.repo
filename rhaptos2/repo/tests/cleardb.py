@@ -1,11 +1,9 @@
 
 import os, json
 import pprint
-from rhaptos2.repo import backend, model
+from rhaptos2.repo import backend, model, sessioncache
 from rhaptos2.repo.backend import db_session
 from rhaptos2.common import conf
-
-owner = "cnxuser:529d7edc-63ee-40c6-a4be-5c7a94c7ed26"
 
 
 
@@ -15,4 +13,4 @@ confd = conf.get_config(CONFD_PATH)
 backend.initdb(confd['app'])
 backend.clean_dbase(confd['app'])
 
-
+sessioncache._fakesessionusers()
