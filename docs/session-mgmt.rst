@@ -85,3 +85,17 @@ Anyway, enough round the houses, I don;t know enough about securing encrypted
 services with part of the service under complete control of the attacker, to be 
 sure I have not screwed it up.  So I wont do it till I do, and even then *all we should store* is the session ID.
 
+
+
+A neat trick
+~~~~~~~~~~~~
+Sometimes it is desireable to set a cookie in your browser - chrome enables us to do this as follows:
+
+1. navigate to the domain & path desired (i.e. "/" in most cases)
+2. enter ``javascript:document.cookie="name=value"`` in the address bar & return
+3. you should then revisit the domain, and hey presto you have a cookie
+
+
+Thanks to http://blog.nategood.com/quickly-add-and-edit-cookies-in-chrome
+
+

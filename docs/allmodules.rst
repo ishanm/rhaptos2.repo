@@ -17,6 +17,7 @@ security
 .. automodule:: rhaptos2.repo.auth
 .. automodule:: rhaptos2.repo.backend
 .. automodule:: rhaptos2.repo.cnxbase
+.. automodule:: rhaptos2.repo.sessioncache
 
 common
 ------

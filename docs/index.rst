@@ -31,37 +31,14 @@ Json Schema and examples
    jsonflow
 
 
+Security
+--------
 
-Session Cookies
-===============
+.. toctree::
+   :maxdepth: 1
 
-Please also see executableopinions docs.
-
-There are two flows being considered here - the verify-existing-session flow, and login-then-set-up-session flow.  The first is simpler
-
-Verify-existing-session
------------------------
-
-A browser supplies a cookie, for the domain, with k/v pair "cnxsessionid:[uuid]"
-This uuid is mapped *on the server - not client side* to a cnxuser mediatype expressed as python dict or json object.  
-
-This then returns the cached user object, and the user_uri is stored in REMOTE_USER_URI" in the environ, ready to be used for matching in the database etc.
-
-If no session cookie exists, or is expired we redirect to login.
-
-
-
-A neat trick
-~~~~~~~~~~~~
-Sometimes it is desireable to set a cookie in your browser - chrome enables us to do this as follows:
-
-1. navigate to the domain & path desired (i.e. "/" in most cases)
-2. enter ``javascript:document.cookie="name=value"`` in the address bar & return
-3. you should then revisit the domain, and hey presto you have a cookie
-
-
-Thanks to http://blog.nategood.com/quickly-add-and-edit-cookies-in-chrome
-
+   session-mgmt
+   
 
 
 Misc.
