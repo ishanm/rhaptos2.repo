@@ -66,8 +66,8 @@ def make_app(config, as_standalone=False):
     # Set the application
     app = set_app(app)
 
-    if as_standalone:
-        from rhaptos2.repo import _standalone
+#    if as_standalone:
+#        from rhaptos2.repo import _standalone
 
     # Initialize the views
     from rhaptos2.repo import views  # noqa
@@ -145,9 +145,9 @@ def set_up_logging(app):
     config = app.config
 
     # Define the logging handlers
-    statsd_host = config['globals']['bamboo_global']['statsd_host']
-    statsd_port = config['globals']['bamboo_global']['statsd_port']
-    statsd_handler = log.StatsdHandler(statsd_host, statsd_port)
+#    statsd_host = config['globals']['bamboo_global']['statsd_host']
+#    statsd_port = config['globals']['bamboo_global']['statsd_port']
+#    statsd_handler = log.StatsdHandler(statsd_host, statsd_port)
     stream_handler = logging.StreamHandler()
 
     # Define the log formatting. Reduced this as bug #39 prevents
@@ -158,9 +158,9 @@ def set_up_logging(app):
     formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s  "
                                   "- %(message)s")
 
-    statsd_handler.setFormatter(formatter)
+    #statsd_handler.setFormatter(formatter)
     stream_handler.setFormatter(formatter)
 
     # Set the handlers on the application.
-    for handler in (statsd_handler, stream_handler,):
+    for handler in (stream_handler,):
         app.logger.addHandler(handler)

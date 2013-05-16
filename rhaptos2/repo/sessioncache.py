@@ -167,7 +167,6 @@ def validate_uuid_format(uuidstr):
         return False
     else:
         return True
-    
 
 def getconn():
     """
@@ -181,8 +180,6 @@ def getconn():
 
     We want a pool that will relinquish control back using gevent calls
     https://bitbucket.org/denis/gevent/src/5f6169fc65c9/examples/psycopg2_pool.py - see surfly in github.
-    
-    
     """
     try:
         conn = psycopg2.connect(host=CONFD['pghost'],
@@ -268,7 +265,6 @@ def set_session(sessionid, userd):
                                         , %s
                                         , CURRENT_TIMESTAMP
                                         , CURRENT_TIMESTAMP + INTERVAL '%s SECONDS');"""
-
     try:
         exec_stmt(SQL, [sessionid,
                         json.dumps(userd),

@@ -67,8 +67,22 @@ oid = OpenID(app)
 CNXSESSIONID = "cnxsessionid"
 
 
+def redirect_to_login():
+    """
+    A Q&D way to avoid redirection loops
+    
+    """
+    tmpl = """<p>Hello It seems your session has expired.
+    <p>Please <a href="/login">login again.</a>"""
+    resp = flask.make_response(tmpl)
+    return resp
+
 def handle_user_authentication(flask_request):
     """Correctly perform all authentication workflows
+
+    Either raise an Error, return an app
+    or
+    return None, thus allowing onward processing of the request.
     
     This gets called before_request (which is *after* processing of HTTP headers
     but *before* __call__ on wsgi.)
@@ -79,6 +93,10 @@ def handle_user_authentication(flask_request):
     themselves. (todo-later: such late decisions are well suited for deferred
     callbacks)
 
+    Where do we keep the current request's user details.
+    For the moment, on ``g`` Flask's thread-local dumping ground.
+    
+    
     The flow (state diagram later)
 
     A. Registered User
@@ -106,22 +124,41 @@ def handle_user_authentication(flask_request):
        -> return the ``user_dict`` and let auth-flow take care of it
 
     """
+    #clear down storage area.
+    g.userd = None
+    g.sessionid = None
+
+    ### if someone is trying to login, it is the *only* time they should
+    ### hit this wsgi app and *not* get bounced out for bad session
+    ### FIXME - while this is the *only* exception I dont like the hardcoded manner
+    ### options: have /login served by another app?
+    if flask_request.path in ("/login", "/favicon.ico"):
+        return None
+    dolog("INFO", "Auth test for %s" %  flask_request.path)    
+        
     ### convert the cookie to a registered users details
     try:
-        userdata = session_to_user(flask_request.cookies, flask_request.environ)
+        userdata, sessionid = session_to_user(flask_request.cookies, flask_request.environ)
     except Rhaptos2NoSessionCookieError, e:
-        return redirect("/login_greeting")
+        dolog("INFO", "Session Lookup returned NoCookieError, so redirect to login")
+        return redirect_to_login()
         #We end here for now - later we shall fix tempsessions
         #userdata = set_temp_session()
         
     ## We are at start of request cycle, so tell everything downstream who User is.
     if userdata is not None:
+        ### For now keep ``g`` the source of data on current thread-local request.
         userdata['user_uri'] = userdata['user_id']
         g.userd = userdata
+        g.sessionid = sessionid
         flask_request.environ['REMOTE_USER_URI'] = userdata['user_uri']
+        dolog("INFO", "Session Lookup success, sessionid:%s::user_uri:%s::requestid:%s::" %
+                              (g.sessionid, userdata['user_uri'], g.requestid))
+        ### Now flask actually calls __call__
     else:
         g.userd = None
-        raise Rhaptos2Error("no user data, Auth ID not registerd - redirerct to login")
+        dolog("INFO", "Session Lookup returned None User, so redirect to login")        
+        return redirect_to_login()
     
 ##########################
 ## Session Cookie Handling
@@ -145,7 +182,7 @@ def session_to_user(flask_request_cookiedict, flask_request_environ):
     else:
         raise Rhaptos2NoSessionCookieError("NO SESSION - REDIRECT TO LOGIN")
     userdata = lookup_session(sessid)
-    return userdata
+    return (userdata, sessid)
     
 
 def lookup_session(sessid):
@@ -182,7 +219,7 @@ def authenticated_identifier_to_registered_user_details(ai):
             or error (user service down).
     
     """
-    payload = {'user': authenticated_identifier}
+    payload = {'user': ai}
     ### Fixme - the whole app global thing is annoying me now.
     user_server_url = app.config['globals'][u'userserver'].replace("/user", "/openid")
 
@@ -219,10 +256,36 @@ def create_session(userdata):
     
     ### Now at end of request we will call begin_session() and its closure will set sessionid correctly.
     
+def delete_session(sessionid):
+    """
+
+    """
+
+    def end_session(resp):
+        resp.set_cookie('cnxsessionid',"SessionExpired",
+                        expires=0,
+                        httponly=True)
+        return resp
+
+    g.deferred_callbacks.append(end_session)
+    sessioncache.delete_session(sessionid)
+    ### Now at end of request we will call end_session() and its closure will
+    ### set an invalid cookie, thus removeing the cookie in most cases.
+
+    
 def set_temp_session():
     """
-    Need to create_user in user service.
-    - this functionality is stubbed for now
+    A temopriary session is not yet fully implemented
+    A temporary session is to allow a unregistered and unauthorised user to
+    vist the site, acquire a temporary userid and a normal session.
+
+    Then they will be able to work as normal, the workspace and acls set to the just invented
+    temporary id.
+
+    However work saved will be irrecoverable after session expires...
+
+    :discuss:
+    
     """
     useruri = create_temp_user("temporary", "http:/openid.cnx.org/%s" % str(uuid.uuid4()))
     tempuserdict = {'fullname':"temporary user", 'user_id':useruri}
@@ -235,8 +298,6 @@ def create_temp_user(identifiertype, identifierstring):
     We should ping to user service and create a temporary userid
     linked to a made up identifier.  This can then be linked to the
     unregistered user when they finally register.
-
-    
 
     FIXME - needs to actually talk to userservice.
     THis is however a asynchronous problem, solve under session id
@@ -273,6 +334,7 @@ def after_authentication(authenticated_identifier, method):
     
     dolog("INFO", "in after auth - %s %s" % (authenticated_identifier, method))
     userdetails = authenticated_identifier_to_registered_user_details(authenticated_identifier)
+    create_session(userdetails)    
     return userdetails
 
 
@@ -286,55 +348,8 @@ def whoami():
     
     '''
     return g.userd
-    
-    # if (HTTPHEADER_STORING_USERAUTH in request.headers
-    #      and app.debug is True
-    #        and 'authenticated_identifier' not in session):
-    #     fakeuserauth = request.headers.get(HTTPHEADER_STORING_USERAUTH)
-    #     ident = after_authentication(fakeuserauth, "openid")
-    #     dolog("INFO", "FAKING USER LOGIN - %s" % fakeuserauth)
-    #     return ident
-
-    # elif 'authenticated_identifier' in session:
-    #     ident = Identity(session['authenticated_identifier'])
-    #     g.userID = ident.userID
-    #     dolog("INFO", "Session active user is - %s" % ident.userID)
-    #     return ident
-    # else:
-    #     callstatsd("rhaptos2.repo.notloggedin")
-    #     dolog("INFO", "not headers, not session")        
-    #     g.userID = None
-    #     return None
 
 
-## .. todo:: why is there a view in here??
-@app.route("/me/", methods=['GET'])
-def whoamiGET():
-    '''
-
-    returns
-    Either 401 if OpenID not available or JSON document of form
-
-    {"openid_url": "https://www.google.com/accounts/o8/id?id=AItOawlWRa8JTK7NyaAvAC4KrGaZik80gsKfe2U",  # noqa
-     "email": "Not Implemented",
-     "name": "Not Implemented"}
-
-    I expect we shall want to shift to a User.JSON document...
-
-
-    '''
-    ### todo: return 401 code and let ajax client put up login.
-    userd = whoami()
-
-    if userd:
-        jsond = asjson(userd)
-        ### make decorators !!!
-        resp = flask.make_response(jsond)
-        resp.content_type = 'application/json'
-        resp = apply_cors(resp)
-        return resp
-    else:
-        return("Not logged in", 401)
 
 
 def apply_cors(resp):
@@ -389,7 +404,7 @@ def callstatsd(dottedcounter):
     except:
         pass
 
-
+#zombie code
 def asjson(pyobj):
     '''just placeholder
 
