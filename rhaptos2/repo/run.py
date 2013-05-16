@@ -24,7 +24,7 @@ app, and pass it to the waitress server (To be replaced by gunicorn)::
 
 """
 
-from rhaptos2.repo import make_app
+from rhaptos2.repo import make_app, sessioncache
 from rhaptos2.repo.configuration import Configuration
 from optparse import OptionParser
 import os
@@ -35,6 +35,8 @@ from waitress import serve
 
 def main():
     opts, args = parse_args()
+    print opts
+    print args
     config = Configuration.from_file(opts.conf)
     app = get_app(opts, args, config, 
                   as_standalone = opts.devserver, 
@@ -56,7 +58,8 @@ def get_app(opts, args, config, as_standalone = False, with_testuser = False):
 
     app = make_app(config)
     app.debug = True
-
+    sessioncache.set_config(config)
+    
     if as_standalone:
 
         if not os.path.isdir(opts.jslocation):

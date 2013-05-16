@@ -19,6 +19,13 @@ class Rhaptos2Error(Exception):
 class Rhaptos2SecurityError(Exception):
     pass
 
+class Rhaptos2SessionLookupFailedError(Exception):
+    pass
+
+class Rhaptos2NoSessionCookieError(Exception):
+    pass
+    
+    
 ### To Be used for generioc raising of errors - expect to replace
 ### most calls with more specific error
 

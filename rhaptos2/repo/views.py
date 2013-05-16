@@ -117,8 +117,15 @@ def index():
     TODO: either use a config value, or bring a index template in here
     """
     dolog("INFO", "THis is request %s" % g.requestid)
-    return redirect("/js/")
+    return auth.handle_user_authentication(request)
+    
 
+@app.route("/login_greeting", methods=['GET'])
+def loginggreeting():
+    """
+    """
+    return """<p>Hello It seems your session has expired.
+    <p>Please <a href="/login">login again.</a>"""
 
 # Content GET, POST (create), and PUT (change)
 @app.route("/workspace/", methods=['GET'])

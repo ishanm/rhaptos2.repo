@@ -69,21 +69,27 @@ Testing issues
 Why do you not encrypt the session ID in the cookie?
 ----------------------------------------------------
 
-Mostly because I know bupkiss about encryption.  No really I can do AES
-with OpenSSH just fine, but did I do it right? Did I rotate my encryption keys 
-with each user? Did I use cyclic or block level encryption? Am I handing out 
-an oracle? (The last one is yes)
+Mostly because I know bupkiss about encryption.  No really I can do AES with
+OpenSSH just fine, but did I do it right? Did I rotate my encryption keys with
+each user? Did I use cyclic or block level encryption? Am I handing out an
+oracle? (The last one is yes)
 
-Here is a simple argument - to correctly and securely encrypt anything sent 
+Here is a simple argument - to correctly and securely encrypt anything sent
 client side one should have a salt/key unique to each user.
 
-This simple and reasonable request destroys the main argument for sticking session details like isAdmin and UserName into a encrypted cookie - that it simplifies distributed architecture (I can let client connect to any web server, and I will still have the session state in the cookie, *no need for a database lookup*)
+This simple and reasonable request destroys the main argument for sticking
+session details like isAdmin and UserName into a encrypted cookie - that it
+simplifies distributed architecture (I can let client connect to any web server,
+and I will still have the session state in the cookie, *no need for a database
+lookup*)
 
-Well the minute we need to get a unique salt for a user, we are back to database lookups, and even more frequently than just plain session lookups.  
+Well the minute we need to get a unique salt for a user, we are back to database
+lookups, and even more frequently than just plain session lookups.
 
 Anyway, enough round the houses, I don;t know enough about securing encrypted
-services with part of the service under complete control of the attacker, to be 
-sure I have not screwed it up.  So I wont do it till I do, and even then *all we should store* is the session ID.
+services with part of the service under complete control of the attacker, to be
+sure I have not screwed it up.  So I wont do it till I do, and even then *all we
+should store* is the session ID.
 
 
 

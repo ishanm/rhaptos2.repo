@@ -11,8 +11,16 @@
 
 """:author:  paul@mikadosoftware.com <Paul Brian>
 
+session-cache: This is a one module solution, proving ability for
+               a web-app to get, set and delete a session marker on a client
+               It is intended to be used by :mod:`auth.py` which controls the
+               flow of authentication decisions made during request processing.
 
-This is a temporary one module soltuon.
+Why? Because I was getting confused with lack of fine control over sessions
+and because the Flask implementation relied heavily on encryption which
+seems to be the wrong direction.
+So we needed a server-side session cookie impl. with fairly fine control.
+
 I intend to replace the existing SqlAlchemy based services
 with pure psycopg2 implementations, but for now I will be content
 not adding another feature to SA
@@ -115,17 +123,32 @@ ALTER TABLE ONLY session_cache
     ADD CONSTRAINT session_cache_pkey PRIMARY KEY (sessionid);
 
 
+Standalone usage
+----------------
+d = {'host':'127.0.0.1', 'user':'repo', 'passwd':'repopass', 'dbase':'dbtest'}
+
+
 """
 import psycopg2
 import json
 import datetime
-from err import Rhaptos2Error
+from err import Rhaptos2Error,  Rhaptos2NoSessionCookieError
+from rhaptos2.repo  import dolog
 
 #### I do not think this is suitable for configuring in usual channel.
 #### (set to one hour for now)
 FIXEDSESSIONDURATIONSECS = 3600
 DT = datetime.timedelta(seconds=FIXEDSESSIONDURATIONSECS)
+CONFD = {}# module level global to be setup
 
+
+
+def set_config(confd):
+    """
+    """
+    global CONFD
+    CONFD.update(confd)
+    
 
 def validate_uuid_format(uuidstr):
     """
@@ -162,10 +185,10 @@ def getconn():
     
     """
     try:
-        conn = psycopg2.connect(host="www.frozone.mikadosoftware.com",
-                            database="dbtest",
-                            user="test1",
-                            password="pass1")
+        conn = psycopg2.connect(host=CONFD['pghost'],
+                                database=CONFD['pgdbname'],
+                                user=CONFD['pgusername'],
+                                password=CONFD['pgpassword'])
     except psycopg2.Error, e:
         pass
         
@@ -225,7 +248,14 @@ def set_session(sessionid, userd):
     Given a sessionid (generated according to ``cnxsessionid spec`` elsewhere)
     and a ``userdict`` store in session cache with appropriate timeouts.
 
-    
+    TIMESTAMPS.
+    We are comparing the time now, with the expirytime of the cookie *in the database*
+    This reduces the portability.
+
+    This beats the previous solution of passing in python formatted UTC and then comparing
+    on database.
+
+    FIXME: bring comaprison into python.
     """
     if not validate_uuid_format(sessionid):
         raise Rhaptos2Error("Incorrect UUID format for sessionid %s" % sessionid)
@@ -234,18 +264,15 @@ def set_session(sessionid, userd):
                                         , userdict
                                         , session_startutc
                                         , session_endutc)
-
              VALUES                    (%s
                                         , %s
-                                        , %s
-                                        , %s);"""
+                                        , CURRENT_TIMESTAMP
+                                        , CURRENT_TIMESTAMP + INTERVAL '%s SECONDS');"""
 
     try:
-        tnow = datetime.datetime.utcnow()
         exec_stmt(SQL, [sessionid,
                         json.dumps(userd),
-                        tnow,
-                        tnow+DT                        
+                        FIXEDSESSIONDURATIONSECS
                        ])
     except psycopg2.IntegrityError, e :
         ### This should never happen, but does in testing enough to trap.
@@ -276,13 +303,16 @@ def get_session(sessionid):
     
     Otherwise return None
     (We do not error out on id not found)
-    
+
+    NB this depends heavily on co-ordinating the incoming TZ of 
     """
     if not validate_uuid_format(sessionid):
         raise Rhaptos2Error("Incorrect UUID format for sessionid %s" % sessionid)
-
+    dolog("INFO", "lookup %s type %s" % (sessionid, type(sessionid)))
+          
     SQL = """SELECT userdict FROM session_cache WHERE sessionid = %s
-             AND CURRENT_TIMESTAMP BETWEEN session_startutc AND session_endutc;"""
+             AND CURRENT_TIMESTAMP BETWEEN
+                  session_startutc AND session_endutc;"""
     rs = run_query(SQL, [sessionid,])
     if len(rs) != 1:
         return None

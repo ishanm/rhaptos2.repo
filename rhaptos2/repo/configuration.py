@@ -69,6 +69,7 @@ class Configuration(Mapping):
         """Initialize the class from an INI file."""
         settings = {}
         global_settings = {}
+        print file
         with open(file, 'r') as f:
             ### parser will be case-sensitive taking form config file.
             parser = ConfigParser.SafeConfigParser()

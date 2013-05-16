@@ -11,6 +11,8 @@
 
 """
 
+
+
   * requesting_user_uri
 This is passed around a lot
 This is suboptimal, and I think should be replaced with passing around the
@@ -36,14 +38,14 @@ import json
 import pprint
 import uuid
 
-from rhaptos2.common.err import Rhaptos2Error
-from rhaptos2.repo import get_app, dolog
+from rhaptos2.repo.err import Rhaptos2Error, Rhaptos2NoSessionCookieError
+from rhaptos2.repo import get_app, dolog, sessioncache
 
 import flask
-from flask import request, g, session
+from flask import request, g, session, redirect
 from flaskext.openid import OpenID
 import requests
-import sessioncache
+
 from webob import Request
 
 app = get_app()
@@ -61,31 +63,59 @@ oid = OpenID(app)
 ########################
 
 ### this is key found in all session cookies
+### It is hardcoded here not config.
 CNXSESSIONID = "cnxsessionid"
-
-### FIXME - testing purposes only
-ALLZEROS = "00000000-0000-0000-0000-000000000000"
-ROUSER = "00000000-0000-0000-0000-000000000001"
-BADUSER = "00000000-0000-0000-0000-000000000002"
 
 
 def handle_user_authentication(flask_request):
-    """
-
-    gets called before_request (which is *after* processing of HTTP headers
+    """Correctly perform all authentication workflows
+    
+    This gets called before_request (which is *after* processing of HTTP headers
     but *before* __call__ on wsgi.)
+
+    All the functions in sessioncache, and auth, should be called from here
+    (maybe in a chain) and raise errors or other signals to allow this function
+    to take action, not to presume on some action (like a redirect)
+    themselves. (todo-later: such late decisions are well suited for deferred
+    callbacks)
+
+    The flow (state diagram later)
+
+    A. Registered User
+    B. Temp-Registered User
+    C. UnRegistered User
+
+    1. User with valid cookie
+    2. User with no cookie / invalid cookie
+    
+    A.2. A user who has previously registered but has a expired cookie or cleared cache.
+
+    Arrives at /
+    
+    
 
     we examine the request, find session cookie,
     register any logged in user, or redirect to login pages
+
+
+    1. If no session cookie provided (ie browser never visited us)
+       -> Create a temporary session id and temporary user.
+    2. If session cookie provided but the lookup fails (out of date?)
+       -> they have visited before, redirect to login with "session expired"
+    3. If session cookie provided, and lookup is ok,
+       -> return the ``user_dict`` and let auth-flow take care of it
+
     """
     ### convert the cookie to a registered users details
     try:
         userdata = session_to_user(flask_request.cookies, flask_request.environ)
-    except Rhaptos2Error, e:
-        raise e #fixme: redirect to login should happen here
-
+    except Rhaptos2NoSessionCookieError, e:
+        return redirect("/login_greeting")
+        #We end here for now - later we shall fix tempsessions
+        #userdata = set_temp_session()
+        
     ## We are at start of request cycle, so tell everything downstream who User is.
-    if userdata:
+    if userdata is not None:
         userdata['user_uri'] = userdata['user_id']
         g.userd = userdata
         flask_request.environ['REMOTE_USER_URI'] = userdata['user_uri']
@@ -106,11 +136,14 @@ def session_to_user(flask_request_cookiedict, flask_request_environ):
     >>> outenv["fullname"]
     'pbrian'
 
+    Returns: Err, None if lookup fails, userdict if not
+
+    todo: I prefer having failure to lookup also raise err.
     """
     if CNXSESSIONID in flask_request_cookiedict:
         sessid = flask_request_cookiedict[CNXSESSIONID]
     else:
-        raise Rhaptos2Error("NO SESSION - REDIRECT TO LOGIN")
+        raise Rhaptos2NoSessionCookieError("NO SESSION - REDIRECT TO LOGIN")
     userdata = lookup_session(sessid)
     return userdata
     
@@ -119,11 +152,15 @@ def lookup_session(sessid):
     """
     We would expect this to be redis-style cache in production
 
-    returns python dict (the return value of get_session)
+    returns python dict of ``user_dict`` format.
+            or None if no session ID in cache
+            or Error if lookup failed for other reason.
+    
     """
     dolog("INFO", "begin look up sessid %s in cache" % sessid)
     try:
         userd = sessioncache.get_session(sessid)
+        dolog("INFO", "we got this from session lookup %s" % str(userd))
         if userd:
             dolog("INFO", "We attempted to look up sessid %s in cache SUCCESS" % sessid)
             return userd
@@ -168,17 +205,45 @@ def authenticated_identifier_to_registered_user_details(ai):
 
 def create_session(userdata):
     """
+    discuss: do we expire this?
+    do we limit domain?
     """
-    sessionid = uuid.uuid4()
+    sessionid = str(uuid.uuid4())
     def begin_session(resp):
-        resp.set_cookie('cnxsessionid',sessionid)
+        resp.set_cookie('cnxsessionid',sessionid,
+                        httponly=True)
         return resp
         
     g.deferred_callbacks.append(begin_session)
+    sessioncache.set_session(sessionid, userdata)
+    
     ### Now at end of request we will call begin_session() and its closure will set sessionid correctly.
     
+def set_temp_session():
+    """
+    Need to create_user in user service.
+    - this functionality is stubbed for now
+    """
+    useruri = create_temp_user("temporary", "http:/openid.cnx.org/%s" % str(uuid.uuid4()))
+    tempuserdict = {'fullname':"temporary user", 'user_id':useruri}
+    create_session(tempuserdict)
+    return tempuserdict
 
-        
+    
+def create_temp_user(identifiertype, identifierstring):
+    """
+    We should ping to user service and create a temporary userid
+    linked to a made up identifier.  This can then be linked to the
+    unregistered user when they finally register.
+
+    
+
+    FIXME - needs to actually talk to userservice.
+    THis is however a asynchronous problem, solve under session id
+    """
+    ### vist the user dbase, get back a user_uri
+    stubbeduri = "cnxuser:" + str(uuid.uuid4())
+    return stubbeduri
         
 def after_authentication(authenticated_identifier, method):
     """Called after a user has provided a validated ID (openid or peresons)
@@ -203,7 +268,7 @@ def after_authentication(authenticated_identifier, method):
        
     
     """
-    if method not in ('openid', 'persona'):
+    if method not in ('openid', 'persona', 'temporary'):
         raise Rhaptos2Error("Incorrect method of authenticating ID")
     
     dolog("INFO", "in after auth - %s %s" % (authenticated_identifier, method))
