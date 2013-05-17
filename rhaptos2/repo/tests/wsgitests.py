@@ -24,11 +24,12 @@
 
 
 import decl
-from rhaptos2.repo import make_app, backend, restrest
+from rhaptos2.repo import make_app, backend, restrest, sessioncache, dolog
 from webtest import TestApp
 from wsgiproxy.app import WSGIProxyApp
 from optparse import OptionParser
 import urlparse
+import requests
 
 
 def capture_conversation(resp):
@@ -117,13 +118,25 @@ moduleuri = "cnxmodule:d3911c28-2a9e-4153-9546-f71d83e41126"
 collectionuri = "cnxcollection:be7790d1-9ee4-4b25-be84-30b7208f5db7"
 folderuri = "cnxfolder:c192bcaf-669a-44c5-b799-96ae00ef4707"
 
-userhost = "http://localhost:8000/"
+userhost = "http://127.0.0.1:8000/"
 ### THis header is where we put the authenticated ID
 
 ### session IDs - need to link to fixed auth.py
+def get_autosession():
+    """
+    """
+    resp = requests.get(userhost + "/autosession")
+    sessionid = resp.cookies['cnxsessionid']
+    return str(sessionid)
+    
 RWUSERSESSIONID = "00000000-0000-0000-0000-000000000000"
 ROUSERSESSIONID = "00000000-0000-0000-0000-000000000001"
 BADUSERSESSIONID = "00000000-0000-0000-0000-000000000002"
+
+#RWUSERSESSIONID = get_autosession()
+#ROUSERSESSIONID = RWUSERSESSIONID
+#BADUSERSESSIONID = RWUSERSESSIONID
+
 
 def get_cookie_hdr(fakesessionid):
     """
@@ -279,6 +292,7 @@ def wapp_post(wapp, resourcetype, data, test_session_id):
     headerd = get_cookie_hdr(test_session_id)
     try:
         resp = wapp.post_json(URL, params=data, headers=headerd, status="*")
+        print resp.request
     except Exception, e:
         import traceback
         tb = traceback.format_exc()
@@ -308,21 +322,6 @@ def wapp_put(wapp, resourcetype, data, test_session_id, id_=None):
         tb = traceback.format_exc()
         print e, tb
     return resp
-
-
-
-help = """
-
-test_post_module
-test_put_module
-test_put_module_acl
-test_acl_ro_ok
-test_acl_ro_fail
-test_acl_rw_ok
-test_acl_rw_fail
-test_delete_module
-
- """
 
 
 def test_post_module():
@@ -510,6 +509,10 @@ TESTAPP = None
 
 
 def convert_config(config):
+    """
+    This is done to convert the "dict" from configuration into true dict.
+    
+    """
     defaultsection = 'app'
     for k in config[defaultsection]:
         config[k] = config[defaultsection][k]
@@ -527,12 +530,14 @@ def setup():
     ## now "convert" to app-style dict
     TESTCONFIG = convert_config(config)
 
+    dolog("INFO", "WHAT THE HELL IS GOING ON WITH CONF %s %s" % (str(config), str(TESTCONFIG)))
     if 'HTTPPROXY' in config.keys():
         app = WSGIProxyApp(config['HTTPPROXY'])
         TESTAPP = TestApp(app, extra_environ={'REMOTE_ADDR': '1.2.3.4'})
     else:
         app = make_app(TESTCONFIG)
         app.debug = True
+        sessioncache.set_config(config)
         TESTAPP = TestApp(app.wsgi_app)
 
 

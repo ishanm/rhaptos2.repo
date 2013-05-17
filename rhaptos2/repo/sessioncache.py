@@ -183,6 +183,7 @@ def getconn():
     https://bitbucket.org/denis/gevent/src/5f6169fc65c9/examples/psycopg2_pool.py - see surfly in github.
     """
     try:
+        dolog("INFO", "CONFD is %s" % str(CONFD))
         conn = psycopg2.connect(host=CONFD['pghost'],
                                 database=CONFD['pgdbname'],
                                 user=CONFD['pgusername'],

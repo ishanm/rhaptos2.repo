@@ -242,9 +242,15 @@ def admin_config():
 @app.route("/autosession", methods=['GET'])
 def auto_session():
     """
+    this is a bit wrong - for testing purposes
+    I want to fake three sessions with known ids.
+    Also generate a "real" session with a known user
+    FIXME - there has to be a better way
     """
-    auth.set_temp_session()
-    return "session created"
+    
+    sessionid = auth.set_autosession()
+
+    return "Session created - please see headers"
         
 ################ openid views - from flask
 

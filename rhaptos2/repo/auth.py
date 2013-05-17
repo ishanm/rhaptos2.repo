@@ -84,6 +84,20 @@ def redirect_to_login():
     resp = flask.make_response(tmpl)
     return resp
 
+def store_userdata_in_request(userd, sessionid):
+    """
+    """
+
+    ### For now keep ``g`` the source of data on current thread-local request.
+    ### later we transfer to putting it all on environ for extra portability 
+    userd['user_uri'] = userd['user_id']
+    g.userd = userd
+    g.sessionid = sessionid
+    dolog("INFO", "Session Lookup success, sessionid:%s::user_uri:%s::requestid:%s::" %
+                          (g.sessionid, userd['user_uri'], g.requestid))
+    ### Now flask actually calls __call__
+    
+    
 def handle_user_authentication(flask_request):
     """Correctly perform all authentication workflows
 
@@ -154,14 +168,7 @@ def handle_user_authentication(flask_request):
         
     ## We are at start of request cycle, so tell everything downstream who User is.
     if userdata is not None:
-        ### For now keep ``g`` the source of data on current thread-local request.
-        userdata['user_uri'] = userdata['user_id']
-        g.userd = userdata
-        g.sessionid = sessionid
-        flask_request.environ['REMOTE_USER_URI'] = userdata['user_uri']
-        dolog("INFO", "Session Lookup success, sessionid:%s::user_uri:%s::requestid:%s::" %
-                              (g.sessionid, userdata['user_uri'], g.requestid))
-        ### Now flask actually calls __call__
+        store_userdata_in_request(userdata, sessionid)
     else:
         g.userd = None
         dolog("INFO", "Session Lookup returned None User, so redirect to login")        
@@ -251,6 +258,10 @@ def create_session(userdata):
     """
     discuss: do we expire this?
     do we limit domain?
+
+    :param: userdata - a ``userdict`` format.
+    :returns: sessionid
+    
     """
     sessionid = str(uuid.uuid4())
     def begin_session(resp):
@@ -261,8 +272,8 @@ def create_session(userdata):
         
     g.deferred_callbacks.append(begin_session)
     sessioncache.set_session(sessionid, userdata)
-    
     ### Now at end of request we will call begin_session() and its closure will set sessionid correctly.
+    return sessionid
     
 def delete_session(sessionid):
     """
@@ -280,6 +291,26 @@ def delete_session(sessionid):
     ### Now at end of request we will call end_session() and its closure will
     ### set an invalid cookie, thus removeing the cookie in most cases.
 
+def set_autosession():
+    """
+    This is a convenience function for development
+    It should fail in production
+    
+    """
+    if not app.debug: raise Rhaptos2Error("autosession should fail in prod.")
+
+    #check if session already live for this user?
+    #Hmm I have not written such code yet - seems a problem
+    #only likely to occur here...
+
+    ###FIXME get the real userdict template
+    standarduser = {'fullname': 'Paul Brian', 'user_id':'cnxuser:1234'}
+    sessionid = create_session(standarduser)    
+    store_userdata_in_request(standarduser, sessionid)
+    ### fake in three users of id 0001 002 etc
+    sessioncache._fakesessionusers(sessiontype='fixed')
+    return standarduser
+    
     
 def set_temp_session():
     """
