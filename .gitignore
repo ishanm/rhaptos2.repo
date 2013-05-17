@@ -13,6 +13,5 @@ _mailinglist
 #*.*#
 */_build/*
 *thirdparty*
+*.ini
 
-devel.ini
-rhaptos2/repo/static/docs
