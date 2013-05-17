@@ -28,19 +28,21 @@ To test locally
    doctests can run in their own suite - they should not require netowrk access.
    This is not always true.
 
-4. functional testing of wsgi app
+4. functional testing of wsgi app::
 
    nosetests --tc-file=../../testing.ini runtests.py
 
-   This will use webtest to send requests *in-process* to the app - *no http calls are made*.  The app however does not know this and proceeds as if runing in a wsgi server.
+This will use webtest to send requests *in-process* to the app - *no http calls
+are made*.  The app however does not know this and proceeds as if runing in a
+wsgi server.
 
-5. functional HTTP testing of wsgi app
+5. functional HTTP testing of wsgi app::
 
-nosetests --tc-file=../../pbrian.ini  --tc=HTTPPROXY:http://localhost:8000/ runtests.py
- python run.py --config=../../pbrian.in
+    nosetests --tc-file=../../pbrian.ini  --tc=HTTPPROXY:http://localhost:8000/ runtests.py
+    python run.py --config=../../pbrian.in
 
-5. example.txt - a demo / example of how the various bits fir together. 
-   it is a doctest suite but needs integrated system 
+5. example.txt - a demo / example of how the various bits fir together.  it is a
+   doctest suite but needs integrated system
 
 
 config passing

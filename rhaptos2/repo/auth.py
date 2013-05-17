@@ -11,6 +11,12 @@
 
 """
 
+:module:`auth` supplies the logic to authenticate users and then store that authentication
+for later requests.
+
+It is strongly linked with :module:`sessioncache`.
+
+
 
 
   * requesting_user_uri
@@ -73,7 +79,8 @@ def redirect_to_login():
     
     """
     tmpl = """<p>Hello It seems your session has expired.
-    <p>Please <a href="/login">login again.</a>"""
+    <p>Please <a href="/login">login again.</a>
+    <p>Developers can <a href="/autosession">autosession</a> """
     resp = flask.make_response(tmpl)
     return resp
 
@@ -132,7 +139,7 @@ def handle_user_authentication(flask_request):
     ### hit this wsgi app and *not* get bounced out for bad session
     ### FIXME - while this is the *only* exception I dont like the hardcoded manner
     ### options: have /login served by another app?
-    if flask_request.path in ("/login", "/favicon.ico"):
+    if flask_request.path in ("/login", "/favicon.ico", "/autosession"):
         return None
     dolog("INFO", "Auth test for %s" %  flask_request.path)    
         
@@ -248,7 +255,8 @@ def create_session(userdata):
     sessionid = str(uuid.uuid4())
     def begin_session(resp):
         resp.set_cookie('cnxsessionid',sessionid,
-                        httponly=True)
+                        httponly=True,
+                        expires=datetime.datetime.today()+datetime.timedelta(days=1))
         return resp
         
     g.deferred_callbacks.append(begin_session)

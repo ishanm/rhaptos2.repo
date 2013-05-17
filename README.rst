@@ -181,6 +181,17 @@ project as the file named ``develop.ini``.
    rhaptos2repo-run --debug --config=develop.ini --port=8000
    * Running on http://127.0.0.1:8000/
 
+A development version is also written, here there is at least one extra 
+wsgi piece of middleware that will statically serve javascript etc.
+This is expected to be the function of nginx in production, and is there
+merely as a convenice for developers.
+
+::
+
+    $ python run.py --config=../../testing.ini --devserver --jslocation=/usr/home/pbrian/deploy/demo1/src/atc
+
+
+
 Deployment
 ----------
 

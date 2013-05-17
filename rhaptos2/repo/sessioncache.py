@@ -26,7 +26,7 @@ with pure psycopg2 implementations, but for now I will be content
 not adding another feature to SA
 
 Session Cache
--------------
+~~~~~~~~~~~~~
 
 The session cache needs to be a fast, distributed lookup system for
 matching a random ID to a dict of user details.
@@ -36,8 +36,8 @@ We shall store the user details in the tabl;e session_cache
 
 
 
-Discussion on merits of cache architecture
-------------------------------------------
+Discussion
+~~~~~~~~~~
 
 Caches are hard.  They need to be very very fast, and in this case
 distributable.  Distributed caches are very very hard because we need to ensure
@@ -54,7 +54,7 @@ immediate reliance on cache-invalidation strategies.
 
 
 Overview
---------
+~~~~~~~~
 
 We have one single table, ``session_cache``.  This stores a json string (as a string, not 9.3 JSON type)
 as value in a key value pair.  The key is a UUID-formatted string, passed in from the application.
@@ -73,9 +73,10 @@ With this we can test the whole lifecyle as below
 
 
 Example Usage
--------------
+~~~~~~~~~~~~~
 
-We firstly pass in a badly formed id.
+We firstly pass in a badly formed id.::
+
 
 >>> sid = "Dr. Evil"
 >>> get_session(sid)
