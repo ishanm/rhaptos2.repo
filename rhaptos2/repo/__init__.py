@@ -22,7 +22,7 @@ import logging
 
 from flask import Flask, g
 
-from rhaptos2.common import log
+from rhaptos2.repo import log
 
 import pkg_resources
 __version__ = pkg_resources.require("rhaptos2.repo")[0].version
