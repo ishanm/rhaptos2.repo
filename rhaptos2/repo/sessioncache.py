@@ -133,23 +133,21 @@ d = {'host':'127.0.0.1', 'user':'repo', 'passwd':'repopass', 'dbase':'dbtest'}
 import psycopg2
 import json
 import datetime
+import pooledConnectionHandler
 from err import Rhaptos2Error,  Rhaptos2NoSessionCookieError
-from rhaptos2.repo  import dolog
+#from rhaptos2.repo  import dolog
 
 #### I do not think this is suitable for configuring in usual channel.
 #### (set to one hour for now)
 FIXEDSESSIONDURATIONSECS = 3600
 DT = datetime.timedelta(seconds=FIXEDSESSIONDURATIONSECS)
-CONFD = {}# module level global to be setup
 
-
+poolConnHandler = pooledConnectionHandler.PostgresConnectionPool(maxsize=5)
 
 def set_config(confd):
     """
     """
-    global CONFD
-    CONFD.update(confd)
-    
+    poolConnHandler.set_conf_settings(**confd)
 
 def validate_uuid_format(uuidstr):
     """
@@ -169,31 +167,6 @@ def validate_uuid_format(uuidstr):
     else:
         return True
 
-def getconn():
-    """
-    Connection pooling required, but want to use a greenlet-aware pool, but until finish testing
-    not pooling at all will suffice.
-
-    We do not want the ThreadedPool here, as it is designed for
-    "real" threads, and listens to their states.
-    
-    http://initd.org/psycopg/docs/pool.html
-
-    We want a pool that will relinquish control back using gevent calls
-    https://bitbucket.org/denis/gevent/src/5f6169fc65c9/examples/psycopg2_pool.py - see surfly in github.
-    """
-    try:
-        dolog("INFO", "CONFD is %s" % str(CONFD))
-        conn = psycopg2.connect(host=CONFD['pghost'],
-                                database=CONFD['pgdbname'],
-                                user=CONFD['pgusername'],
-                                password=CONFD['pgpassword'])
-    except psycopg2.Error, e:
-        pass
-        
-    return conn
-    
-
 def run_query(insql, params):
     """
     Running a query, avoiding the idle transaction costs.
@@ -205,13 +178,7 @@ def run_query(insql, params):
     issues: lots.  No fetch_iterator. connection per query(see above)
                    
     """
-    conn = getconn()
-    cur = conn.cursor()
-    cur.execute(insql, params)
-    rs = cur.fetchall()
-    cur.close()
-    #connection_refresh(conn)  #I can rollback here, its a SELECT
-    return rs
+    return poolConnHandler.fetchall(insql, params)
     
 def exec_stmt(insql, params):
     """
@@ -223,13 +190,7 @@ def exec_stmt(insql, params):
 
     FixMe: Write up all adge case handling here. 
     """
-    conn = getconn()
-    cur = conn.cursor()
-    cur.execute(insql, params)
-    conn.commit() 
-    cur.close()
-    #connection_refresh(conn)  #I can rollback here, its a SELECT
-    conn.close()
+    poolConnHandler.execute(insql, params)
     
 def connection_refresh(conn):
     """
@@ -271,7 +232,7 @@ def set_session(sessionid, userd):
         exec_stmt(SQL, [sessionid,
                         json.dumps(userd),
                         FIXEDSESSIONDURATIONSECS
-                       ])
+                ])
     except psycopg2.IntegrityError, e :
         ### This should never happen, but does in testing enough to trap.
         ### if it does, I guess the session is underattack, close it
@@ -306,7 +267,7 @@ def get_session(sessionid):
     """
     if not validate_uuid_format(sessionid):
         raise Rhaptos2Error("Incorrect UUID format for sessionid %s" % sessionid)
-    dolog("INFO", "lookup %s type %s" % (sessionid, type(sessionid)))
+    #dolog("INFO", "lookup %s type %s" % (sessionid, type(sessionid)))
           
     SQL = """SELECT userdict FROM session_cache WHERE sessionid = %s
              AND CURRENT_TIMESTAMP BETWEEN
