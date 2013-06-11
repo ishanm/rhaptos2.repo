@@ -135,7 +135,7 @@ import json
 import datetime
 import pooledConnectionHandler
 from err import Rhaptos2Error,  Rhaptos2NoSessionCookieError
-#from rhaptos2.repo  import dolog
+from rhaptos2.repo  import dolog
 
 #### I do not think this is suitable for configuring in usual channel.
 #### (set to one hour for now)
@@ -267,7 +267,7 @@ def get_session(sessionid):
     """
     if not validate_uuid_format(sessionid):
         raise Rhaptos2Error("Incorrect UUID format for sessionid %s" % sessionid)
-    #dolog("INFO", "lookup %s type %s" % (sessionid, type(sessionid)))
+    dolog("INFO", "lookup %s type %s" % (sessionid, type(sessionid)))
           
     SQL = """SELECT userdict FROM session_cache WHERE sessionid = %s
              AND CURRENT_TIMESTAMP BETWEEN
