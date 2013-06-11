@@ -147,7 +147,7 @@ poolConnHandler = pooledConnectionHandler.PostgresConnectionPool(maxsize=5)
 def set_config(confd):
     """
     """
-    poolConnHandler.set_conf_settings(**confd)
+    poolConnHandler.set_conf_settings(confd)
 
 def validate_uuid_format(uuidstr):
     """
