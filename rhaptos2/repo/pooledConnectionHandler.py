@@ -1,3 +1,8 @@
+'''
+Code modified from the gevent examples over at
+https://github.com/surfly/gevent/blob/master/examples/psycopg2_pool.py
+'''
+
 import sys
 import contextlib
 
